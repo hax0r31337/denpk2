@@ -13,4 +13,4 @@ the `redirect.nxs` is removed, and the script loading seems to be handled by the
 
 The `marshal` format of the Python language stays untouched, 
 so the `marshal` module can be used to load the unpacked code objects.
-The opcodes has been changed as well, so the `dis` module can't be used to disassemble the code objects.
+The opcodes has been shuffled as well, so the `dis` module can't be used to disassemble the code objects.
