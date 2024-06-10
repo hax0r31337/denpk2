@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::{cmp, io::Read};
 
 #[derive(Debug)]
 #[repr(packed)]
@@ -26,11 +26,17 @@ pub struct FileEntry {
 pub enum CompressionMode {
     None,
     Zlib,
+    Lz4,
 }
 
+// 0x6392628
 #[derive(Debug)]
 pub enum EncryptionMode {
     None,
+    SimpleCrypt,
+    Rc4,
+    Aes,
+    SimpleCryptEx,
 }
 
 impl std::fmt::Debug for FileEntry {
@@ -56,30 +62,74 @@ impl std::fmt::Debug for FileEntry {
 
 impl FileEntry {
     pub fn compression_mode(&self) -> CompressionMode {
-        match self.flags & 0xff {
+        let mode = self.flags & 0xff;
+        match mode {
             0 => CompressionMode::None,
             1 => CompressionMode::Zlib,
-            _ => panic!("Unsupported compression mode"),
+            2 => CompressionMode::Lz4,
+            _ => panic!("Unsupported compression mode: {:02x}", mode),
         }
     }
 
     pub fn encryption_mode(&self) -> EncryptionMode {
-        match (self.flags >> 16) & 0xff {
+        let mode = (self.flags >> 16) & 0xff;
+        match mode {
             0 => EncryptionMode::None,
-            _ => panic!("Unsupported encryption mode"),
+            1 => EncryptionMode::SimpleCrypt,
+            2 => EncryptionMode::Rc4,
+            3 => EncryptionMode::Aes,
+            4 => EncryptionMode::SimpleCryptEx,
+            _ => panic!("Unsupported encryption mode: {:02x}", mode),
         }
     }
 
-    pub fn unpack_data(&self, data: &[u8]) -> Vec<u8> {
-        match self.compression_mode() {
+    pub fn unpack_data(&self, data: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        if data.len() != self.packed_size as usize {
+            return Err("Data length mismatch".into());
+        }
+
+        let data: Box<[u8]> = match self.encryption_mode() {
+            EncryptionMode::None => Box::from(data),
+            EncryptionMode::SimpleCryptEx => {
+                let v3: u64 = self.raw_size.into();
+                let v4: u64 = self.checksum_raw.into();
+                let (offset, len): (u64, u64) = if self.packed_size < 0x81 {
+                    (0, self.packed_size.into())
+                } else {
+                    (
+                        (v3 >> 1) % (self.packed_size as u64 - 80),
+                        ((v4 << 1) % 0x60 + 32), // FIXME
+                    )
+                };
+
+                let p = self.packed_size;
+                println!("{} {} {} {}", offset, len, v3, p);
+                let mut key: u8 = ((v3 ^ v4) & 0xff).try_into().unwrap();
+                let mut copy = vec![0; self.packed_size as usize];
+                copy.copy_from_slice(data);
+
+                for i in offset..cmp::min(offset + len, self.packed_size as u64) {
+                    copy[i as usize] ^= key;
+                    key = key.wrapping_add(1);
+                }
+
+                copy.into_boxed_slice()
+            }
+            _ => {
+                return Err("Unsupported encryption mode".into());
+            }
+        };
+
+        Ok(match self.compression_mode() {
             CompressionMode::None => data.to_vec(),
             CompressionMode::Zlib => {
-                let mut decompressed = Vec::new();
-                let mut decoder = flate2::read::ZlibDecoder::new(data);
-                decoder.read_to_end(&mut decompressed).unwrap();
+                let mut decompressed = Vec::with_capacity(self.raw_size as usize);
+                let mut decoder = flate2::read::ZlibDecoder::new(&*data);
+                decoder.read_to_end(&mut decompressed)?;
                 decompressed
             }
-        }
+            CompressionMode::Lz4 => lz4_flex::decompress(&data, self.raw_size as usize)?,
+        })
     }
 }
 pub struct NpkIterator<'a> {

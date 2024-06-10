@@ -1,5 +1,6 @@
 use std::os::fd::AsRawFd;
 
+#[cfg(target_os = "linux")]
 pub fn new(file: std::fs::File) -> Result<&'static [u8], std::io::Error> {
     let len = file.metadata()?.len();
 
@@ -19,6 +20,16 @@ pub fn new(file: std::fs::File) -> Result<&'static [u8], std::io::Error> {
     }
 
     Ok(unsafe { std::slice::from_raw_parts(mapped as *const u8, len as usize) })
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn new(file: std::fs::File) -> Result<&'static [u8], std::io::Error> {
+    use std::io::Read;
+
+    let mut data = Vec::new();
+    file.take(u64::MAX).read_to_end(&mut data)?;
+
+    Ok(Box::leak(data.into_boxed_slice()))
 }
 
 pub fn new_path(path: &str) -> Result<&'static [u8], std::io::Error> {
