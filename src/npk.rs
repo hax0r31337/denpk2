@@ -29,7 +29,6 @@ pub enum CompressionMode {
     Lz4,
 }
 
-// 0x6392628
 #[derive(Debug)]
 pub enum EncryptionMode {
     None,
@@ -97,13 +96,11 @@ impl FileEntry {
                     (0, self.packed_size.into())
                 } else {
                     (
-                        (v3 >> 1) % (self.packed_size as u64 - 80),
-                        ((v4 << 1) % 0x60 + 32), // FIXME
+                        (v3 >> 1) % (self.packed_size as u64 - 0x80),
+                        (((v4 << 1) & 0xffffffff) % 0x60 + 0x20),
                     )
                 };
 
-                let p = self.packed_size;
-                println!("{} {} {} {}", offset, len, v3, p);
                 let mut key: u8 = ((v3 ^ v4) & 0xff).try_into().unwrap();
                 let mut copy = vec![0; self.packed_size as usize];
                 copy.copy_from_slice(data);
