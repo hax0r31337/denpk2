@@ -6,9 +6,11 @@ use openssl::{
     rsa::{Padding, Rsa},
 };
 
+pub const NXS_MAGIC: &[u8; 8] = b"NXS3\x03\x00\x00\x01";
+
 pub fn unpack(data: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     // "NXS3\x03\x00\x00\x01" | 32-bit unpacked size | 32-bit packed size | 32-bit zipped data size | key sized bytes | data
-    if !data.starts_with(b"NXS3\x03\x00\x00\x01") {
+    if !data.starts_with(NXS_MAGIC) {
         return Err("Invalid header".into());
     }
 
