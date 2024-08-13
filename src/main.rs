@@ -23,7 +23,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else if unpacked[0..4] == marshal::PYC_HEADER[0..4] {
             (unpacked[16..].to_vec(), unpacked[0..16].try_into()?)
         } else {
-            let output = extracted_path.join(format!("{:08x}", id));
+            let output = extracted_path.join(format!("blobs/{:08x}", id));
+            std::fs::create_dir_all(output.parent().ok_or("No parent")?)?;
+
             std::fs::write(&output, &unpacked)?;
             continue;
         };
@@ -35,8 +37,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err("Unexpected object type".into());
         };
 
-        let output =
-            extracted_path.join(format!("{}.pyc", filename.as_str().ok_or("No filename")?));
+        // replace windows backslashes with forward slashes
+        let filename = filename.as_str().map(|s| s.replace("\\", "/"));
+        let output = extracted_path.join(format!("{}.pyc", filename.ok_or("No filename")?));
 
         std::fs::create_dir_all(output.parent().ok_or("No parent")?)?;
 
